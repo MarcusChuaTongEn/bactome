@@ -1819,7 +1819,7 @@ def coexpression(expfile, method):
         python seqproperties.py coexp --expfile=<CSV file> --method=<coexpression method>
 
     @param expfile String: Path to the comma-separated value (CSV) file 
-    containing gene co-expression data.
+    containing gene expression data.
     @param method String: Co-expression measure. Allowable values are braycurtis (Bray and Curtis coefficient), cosine (Cosine coefficient) canberra (Canberra distance), euclidean (Euclidean distance), kendall (Kendall's tau), manhattan (Manhattan distance), pearson (Pearson's correlation), pointserial (Point biserial correlation), somer (Somer's D), spearman (Spearman's correlation), and tanimoto (Tanimoto coefficient).
     '''
     from scipy import stats
@@ -1837,9 +1837,9 @@ def coexpression(expfile, method):
             if method == 'braycurtis': score = d.Bray_Curtis(expData[id1], expData[id2])
             if method == 'canberra': score = d.Canberra(expData[id1], expData[id2])
             if method == 'cosine': score = d.Cosine(expData[id1], expData[id2])
-            if method == 'euclidean': score = d.Euclidean(expData[id1], expData[id2], 2)
+            if method == 'euclidean': score = d.Euclidean(expData[id1], expData[id2])
             if method == 'kendall': score = stats.kendalltau(expData[id1], expData[id2]).correlation
-            if method == 'manhattan': score = d.Manhattan(expData[id1], expData[id2], 1)
+            if method == 'manhattan': score = d.Manhattan(expData[id1], expData[id2])
             if method == 'pearson': score = stats.pearsonr(expData[id1], expData[id2])[0]
             if method == 'pointbiserial': score = stats.pointbiserialr(expData[id1], expData[id2]).correlation
             if method == 'somer': score = stats.somersd(expData[id1], expData[id2]).statistic
@@ -1859,7 +1859,7 @@ def coexpression_randomization(expfile, method, n, replicate):
         python seqproperties.py coexp_rand --expfile=<CSV file> --method=<coexpression method> --n=1000 --replicate=30
 
     @param expfile String: Path to the comma-separated value (CSV) file 
-    containing gene co-expression data.
+    containing gene expression data.
     @param method String: Co-expression measure. Allowable values are braycurtis (Bray and Curtis coefficient), cosine (Cosine coefficient) canberra (Canberra distance), euclidean (Euclidean distance), kendall (Kendall's tau), manhattan (Manhattan distance), pearson (Pearson's correlation), pointserial (Point biserial correlation), somer (Somer's D), spearman (Spearman's correlation), and tanimoto (Tanimoto coefficient).
     @param n Integer: Number of samples in each replicate.
     @param replicate Integer: Number of replicates.
@@ -1892,6 +1892,95 @@ def coexpression_randomization(expfile, method, n, replicate):
         print('%s : %s : %s' % (str(count), str(len(scores)), str(mean_score)))
         count = count + 1
 
+def coexpression_filter(coexpfile, threshold, compare="above", absolute="yes", separator=":"):
+    '''!
+    Function to filter gene co-expressions file against a threshold.
+
+    Usage:
+
+        python seqproperties.py coexp_filter --compare=above --absolute=yes --separator=: --threshold=0.7 --coexpfile=<co-expression file>
+
+    @param coexpfile String: Path to file containing gene co-expressions.
+    @param threshold Float: Threshold value
+    @param compare String: Type of comparison. Allowable types are "above" (filter co-expressions above the threshold) and "below" (filter co-expressions below the threshold). Default = above
+    @param absolute String: Flag to take absolute values of co-expressions. Allowable types are "yes" (convert co-expression to absolute co-expression) and "no" (do not convert co-expression to absolute co-expression). Default = yes
+    @param separator String: Separator in gene co-expression file. Default = :
+    '''
+    threshold = float(threshold)
+    with open(coexpfile, "r") as f:
+        for line in f:
+            line = [x.strip() for x in line[:-1].split(separator)]
+            line[-1] = float(line[-1])
+            if absolute == "yes": line[-1] = abs(line[-1])
+            if compare == "above":
+                if line[-1] >= threshold:
+                    line = [str(x) for x in line]
+                    print(" : ".join(line))
+            if compare == "below":
+                if line[-1] <= threshold:
+                    line = [str(x) for x in line]
+                    print(" : ".join(line))
+
+def coexpression_compare(coexpfile, truthfile, separator=":"):
+    '''!
+    Function to compare gene co-expressions file against model answer (truth file).
+
+    Usage:
+
+        python seqproperties.py coexp_compare --separator=: --coexpfile=<co-expression file> --truthfile=<actual protein-protein interaction file>
+
+    Both gene co-expressions file and model answer (truth file) must have the following format: 
+
+        <count> : <ID1> : <ID2> : ....
+
+    where ":" is the separator; <ID1> and <ID2> pair represents significant gene co-expression or actual protein-protein interaction. This function only uses 3 columns.
+
+    @param coexpfile String: Path to file containing gene co-expressions.
+    @param truthfile String: Path to file containing protein-protein interactions for other truth file.
+    @param separator String: Separator in gene co-expression file. Default = :
+    '''
+    truth = {}
+    truthdata = [x[:-1] for x in open(truthfile).readlines()]
+    truthdata = [[str(x.split(separator)[1].strip()), 
+                  str(x.split(separator)[2].strip())] 
+                for x in truthdata]
+    for line in truthdata:
+        truth[":".join(line)] = None
+    true_positive = 0
+    false_positive = 0
+    false_negative = 0
+    coexp = {}
+    coexpdata = [x[:-1] for x in open(coexpfile).readlines()]
+    coexpdata = [[str(x.split(separator)[1].strip()), 
+                  str(x.split(separator)[2].strip())] 
+                for x in coexpdata]
+    for line in coexpdata:
+        coexp[":".join(line)] = None
+        if (":".join([line[0], line[1]]) in truth) or \
+            (":".join([line[1], line[0]]) in truth): 
+            true_positive = true_positive + 1
+        elif (":".join([line[0], line[1]]) not in truth) and \
+            (":".join([line[1], line[0]]) not in truth): 
+            false_positive = false_positive + 1
+    for x in truth:
+        x = x.split(separator)
+        if (":".join([x[0], x[1]]) not in coexp) and \
+            (":".join([x[1], x[0]]) not in coexp):
+            false_negative = false_negative + 1
+    print("True positive = %s" % str(true_positive))
+    print("False positive = %s" % str(false_positive))
+    print("False negative = %s" % str(false_negative))
+    precision = true_positive / (true_positive + false_positive)
+    recall = true_positive / (true_positive + false_negative)
+    F = (2 * precision * recall) / (precision + recall)
+    CSI = true_positive / (true_positive + false_positive + false_negative)
+    FM = (precision * recall) ** 0.5
+    print("Precision = %.5f" % precision)
+    print("Recall = %.5f" % recall)
+    print("F1-Score = %.5f" % F)
+    print("Critical Success Index = %.5f" % CSI)
+    print("Fowlkes–Mallows Index = %.5f" % FM)
+
 
 if __name__ == '__main__':
     exposed_functions = {'a': percentA,
@@ -1902,6 +1991,8 @@ if __name__ == '__main__':
                          'cleanfasta': cleanFasta,
                          'codoncount': codonCount,
                          'coexp': coexpression,
+                         'coexp_compare': coexpression_compare,
+                         'coexp_filter': coexpression_filter,
                          'coexp_rand': coexpression_randomization,
                          'complement': complement,
                          'difffasta': differenceFasta,
